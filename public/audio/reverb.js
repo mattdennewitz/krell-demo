@@ -13,7 +13,9 @@
  */
 
 const TWO_PI = 2 * Math.PI;
-const WET_GAIN = 0.35;
+// The dispersive tank attenuates the default voice by roughly 10 dB RMS.
+// A 1.4x return makes the spring prominent while retaining output headroom.
+const WET_GAIN = 1.4;
 const SETTLED_GAIN = 1e-8;
 
 function samplesFor(sampleRate, seconds) {
