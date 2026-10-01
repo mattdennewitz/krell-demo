@@ -228,17 +228,17 @@
           <div class="control-card">
             <div class="control-header">
               <label for="param-modamp" class="control-label">MODAMP Amount</label>
-              <output for="param-modamp" id="readout-modamp" class="control-readout">100%</output>
+              <output for="param-modamp" id="readout-modamp" class="control-readout">0%</output>
             </div>
             <div class="slider-wrapper">
-              <input type="range" id="param-modamp" name="modamp" min="0" max="1" step="0.01" value="1" aria-label="MODAMP Amount" aria-valuemin="0" aria-valuemax="1" aria-valuenow="1.00" aria-valuetext="100 percent">
+              <input type="range" id="param-modamp" name="modamp" min="0" max="1" step="0.01" value="0" aria-label="MODAMP Modulation Depth" aria-valuemin="0" aria-valuemax="1" aria-valuenow="0" aria-valuetext="0 percent, pure synth">
             </div>
             <div class="scale-ticks" aria-hidden="true">
-              <span>0% (Silence)</span>
+              <span>0% (Pure synth)</span>
               <span>50%</span>
-              <span>100%</span>
+              <span>100% (Full modulation)</span>
             </div>
-            <p class="control-caption">Carrier amplitude for pure balanced multiplication (no dry blending; 0% is silence).</p>
+            <p class="control-caption">Modulation depth, not a dry/wet blend: 0% passes the synth unchanged; 100% applies full balanced multiplication.</p>
           </div>
 
           <!-- MODAMP Frequency -->
@@ -322,7 +322,7 @@
             <li><strong>Self-Cycling Slope:</strong> A function generator cycles through rise and fall phases. Completing the fall phase triggers random sample-and-hold stages.</li>
             <li><strong>Dynamic Parameter Selection:</strong> Each cycle samples a new oscillator pitch and updates the rise and fall durations for the subsequent cycle.</li>
             <li><strong>Low-Pass Gate:</strong> The signal routes through a 292-inspired LPG operating in Both mode (simultaneous variable low-pass filtering and attenuation). The control envelope modulates gate openness; the heuristic vactrol model imparts characteristic asymmetric optocoupler decay.</li>
-            <li><strong>ARP MODAMP (Balanced Modulator Model):</strong> A functional model inspired by the ARP 2500 Model 1005 ModAmp (<a href="https://www.guitarfool.com/ARP2500/4014.pdf" target="_blank" rel="noopener noreferrer">4014 schematic</a> and <a href="https://djjondent.blogspot.com/2014/11/the-arp-2500-1005-modamp-module.html" target="_blank" rel="noopener noreferrer">1005 MODAMP description</a>). The 4014/1005 is a balanced modulator rather than reverb hardware. Here it performs pure bipolar signal multiplication with a sine carrier oscillator (10&ndash;1000 Hz) before reverb, producing sum and difference sidebands across the entire voice without dry blending. This is a functional signal multiplication model, not a transistor-exact circuit simulation.</li>
+            <li><strong>ARP MODAMP (Balanced Modulator Model):</strong> A functional model inspired by the ARP 2500 Model 1005 ModAmp (<a href="https://www.guitarfool.com/ARP2500/4014.pdf" target="_blank" rel="noopener noreferrer">4014 schematic</a> and <a href="https://djjondent.blogspot.com/2014/11/the-arp-2500-1005-modamp-module.html" target="_blank" rel="noopener noreferrer">1005 MODAMP description</a>). The 4014/1005 is a balanced modulator, not reverb hardware. Modulation depth scales from the unchanged voice at 0% to full bipolar multiplication at 100%, which generates sum/difference sidebands before the spring. This is signal multiplication, not a transistor-exact circuit simulation.
             <li><strong>Spring Reverb (Dispersive Tank Model):</strong> Positioned at the end of the musical processing chain as the final sound-shaping stage before oscilloscope analysis, stereo panning, and master level control. Serial synthetic dispersive delay network with chirped dispersion and metallic reflection; not a sampled impulse response or physical spring emulation.</li>
           </ul>
           <h3 class="panel-title">References &amp; Documentation</h3>

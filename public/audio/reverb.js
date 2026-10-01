@@ -137,11 +137,9 @@ export class SpringReverb {
 }
 
 /**
- * Ideal normalized balanced multiplication (the two two-quadrant multiplier
- * paths combine to admit both signs of both inputs). In the article's physical
- * units the ideal output is A*B/10 volts. With A=10a and B=10b volts, dividing
- * that output by 10 volts gives a*b, not a*b/10. No rectification/DC carrier is
- * added: a sine input and sine carrier produce sum and difference frequencies.
+ * Full depth gives balanced multiplication and sum/difference sidebands; zero
+ * depth passes the input unchanged. Intermediate values vary modulation depth,
+ * not a dry-versus-wet effect mix.
  */
 export function balancedMultiply(a, b) {
   return a * b;
@@ -152,20 +150,21 @@ export class Modamp {
     this.sampleRate = sampleRate;
     this.phase = 0;
     this.rate = 73;
-    this.amount = 1;
+    this.amount = 0;
     this.smoothing = 1 - Math.exp(-1 / (0.020 * sampleRate));
   }
 
-  process(sample, rate = 73, amount = 1) {
+  process(sample, rate = 73, amount = 0) {
     this.rate += this.smoothing * (rate - this.rate);
     this.amount += this.smoothing * (amount - this.amount);
     if (Math.abs(amount - this.amount) < SETTLED_GAIN) this.amount = amount;
-    const carrier = this.amount * Math.sin(this.phase);
+    const carrier = Math.sin(this.phase);
     this.phase += TWO_PI * this.rate / this.sampleRate;
     if (this.phase >= TWO_PI) {
       this.phase -= TWO_PI * Math.floor(this.phase / TWO_PI);
     }
-    return balancedMultiply(sample, carrier);
+    const modulation = 1 - this.amount + this.amount * carrier;
+    return balancedMultiply(sample, modulation);
   }
 }
 
@@ -184,7 +183,7 @@ export class ReverbChain {
    */
   render(input, output, controls) {
     const springTarget = controls.spring ?? 0;
-    const modampTarget = controls.modamp ?? 1;
+    const modampTarget = controls.modamp ?? 0;
     const rate = controls.modRate ?? 73;
     let springAmount = this.springAmount;
     for (let i = 0; i < output.length; i++) {

@@ -57,7 +57,7 @@ const state = {
     spread: 2.0,   // 0 .. 4 octaves
     memory: 1.0,   // 0.4 .. 2.5
     spring: 0.0,    // 0 .. 1 (0% .. 100% wet return)
-    modamp: 1.0,    // 0 .. 1 (0% silence .. 100% carrier amplitude, no dry blend)
+    modamp: 0.0,    // 0 .. 1 modulation depth: pure synth .. full balanced multiplication
     modRate: 73.0,  // 10 .. 1000 Hz
     pan: 0.0,       // -1 (Left) .. 1 (Right)
     gain: 0.18      // 0 .. 0.5 (nominal 0.18)

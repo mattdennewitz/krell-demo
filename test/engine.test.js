@@ -3,14 +3,35 @@ import assert from 'node:assert/strict';
 import { KrellVoice } from '../public/audio/engine.js';
 const controls = { pace: 1, root: 220, spread: 0, memory: 1, waveform: 0 };
 
-test('zero MODAMP amount multiplies the source to silence without blending', async () => {
+test('zero MODAMP depth passes the synth unchanged', async () => {
   const { Modamp } = await import('../public/audio/reverb.js');
   const modamp = new Modamp(48000);
-  // Allow its specified 20 ms carrier-amplitude ramp to settle at zero.
-  for (let i = 0; i < 24000; i++) modamp.process(1, 73, 0);
-  for (let i = 0; i < 128; i++) {
-    assert.ok(Math.abs(modamp.process(Math.sin(i), 73, 0)) < 1e-12);
+  for (const sample of [-1, -0.5, 0, 0.5, 1]) {
+    assert.equal(modamp.process(sample, 73, 0), sample);
   }
+});
+
+test('full MODAMP depth produces sum and difference sidebands', async () => {
+  const { Modamp } = await import('../public/audio/reverb.js');
+  const sampleRate = 48000;
+  const modamp = new Modamp(sampleRate);
+  const frequencies = [367, 440, 513];
+  const real = [0, 0, 0];
+  const imag = [0, 0, 0];
+  for (let i = 0; i < sampleRate * 3; i++) {
+    const input = Math.sin(2 * Math.PI * 440 * i / sampleRate);
+    const output = modamp.process(input, 73, 1);
+    if (i < sampleRate) continue;
+    for (let k = 0; k < frequencies.length; k++) {
+      const angle = 2 * Math.PI * frequencies[k] * i / sampleRate;
+      real[k] += output * Math.cos(angle);
+      imag[k] += output * Math.sin(angle);
+    }
+  }
+  const amplitude = frequencies.map((_, k) => Math.hypot(real[k], imag[k]));
+  assert.ok(amplitude[0] > 1000);
+  assert.ok(amplitude[2] > 1000);
+  assert.ok(amplitude[1] < 1e-6);
 });
 
 test('zero spread uses the selected root from the first envelope cycle', () => {

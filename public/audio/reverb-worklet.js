@@ -14,7 +14,7 @@ class KrellReverbProcessor extends AudioWorkletProcessor {
       },
       {
         name: 'modamp',
-        defaultValue: 1,
+        defaultValue: 0,
         minValue: 0,
         maxValue: 1,
         automationRate: 'k-rate'
@@ -32,7 +32,7 @@ class KrellReverbProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     this.reverb = new ReverbChain(sampleRate);
-    this.controls = { spring: 0, modamp: 1, modRate: 73 };
+    this.controls = { spring: 0, modamp: 0, modRate: 73 };
   }
 
   process(inputs, outputs, parameters) {
@@ -40,7 +40,7 @@ class KrellReverbProcessor extends AudioWorkletProcessor {
     if (!output) return true;
 
     this.controls.spring = parameters.spring?.[0] ?? 0;
-    this.controls.modamp = parameters.modamp?.[0] ?? 1;
+    this.controls.modamp = parameters.modamp?.[0] ?? 0;
     this.controls.modRate = parameters.modRate?.[0] ?? 73;
     // Disconnected input still renders zero excitation so existing tails decay.
     this.reverb.render(inputs[0]?.[0] ?? null, output, this.controls);
