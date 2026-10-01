@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A topology-preserving Buchla-inspired Krell patch synthesizer in the browser.">
+  <title>Krell Patch Synthesizer &mdash; Buchla-Inspired LPG &amp; Self-Cycling Envelope</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-layout">
+    <header class="masthead">
+      <div class="masthead-badge">
+        <span class="badge-dot" id="system-status-indicator" aria-hidden="true"></span>
+        <span class="badge-text" id="system-status-label">Standby &bull; Awaiting Audio Gesture</span>
+      </div>
+      <div class="masthead-titles">
+        <h1 class="instrument-title">KRELL PATCH</h1>
+        <p class="instrument-subtitle">Self-Cycling Generative Analog Synthesis Model</p>
+      </div>
+      <p class="instrument-note">
+        Generative patch where an envelope generator self-cycles through non-linear rise and fall slopes, triggering random pitch and duration sampling at each cycle completion. Audio passes through a topology-preserving Buchla-inspired Low-Pass Gate in Both mode (<a href="https://dafx.de/paper-archive/2013/papers/44.dafx2013_submission_56.pdf" target="_blank" rel="noopener noreferrer">Parker &amp; D&rsquo;Angelo, DAFx 2013</a>) modeled as a passive coupled two-pole circuit with heuristic vactrol dynamics. Not an exact hardware clone.
+      </p>
+    </header>
+
+    <div id="error-banner" class="banner error-banner" role="alert" aria-live="assertive" hidden>
+      <div class="banner-icon" aria-hidden="true">&excl;</div>
+      <div class="banner-body">
+        <strong id="error-title" class="banner-title">Error</strong>
+        <p id="error-message" class="banner-text"></p>
+      </div>
+      <button type="button" id="error-dismiss" class="btn-icon" aria-label="Dismiss error">&times;</button>
+    </div>
+
+    <!-- Signal Flow Diagram -->
+    <section class="panel signal-flow-panel" aria-label="Signal Flow Architecture">
+      <div class="flow-container">
+        <div class="flow-node">
+          <span class="node-tag">RNG &amp; S&amp;H</span>
+          <span class="node-name">Pitch &amp; Slope</span>
+        </div>
+        <div class="flow-arrow" aria-hidden="true">&rarr;</div>
+        <div class="flow-node">
+          <span class="node-tag">Function Gen</span>
+          <span class="node-name">Slope Gen (Rise/Fall)</span>
+        </div>
+        <div class="flow-arrow" aria-hidden="true">&harr;</div>
+        <div class="flow-node">
+          <span class="node-tag">Audio VCO</span>
+          <span class="node-name">Sine / Triangle</span>
+        </div>
+        <div class="flow-arrow" aria-hidden="true">&rarr;</div>
+        <div class="flow-node highlight">
+          <span class="node-tag">Buchla LPG</span>
+          <span class="node-name">Passive 2-Pole (Both Mode)</span>
+        </div>
+        <div class="flow-arrow" aria-hidden="true">&rarr;</div>
+        <div class="flow-node">
+          <span class="node-tag">ARP MODAMP</span>
+          <span class="node-name">Balanced Modulator</span>
+        </div>
+        <div class="flow-arrow" aria-hidden="true">&rarr;</div>
+        <div class="flow-node">
+          <span class="node-tag">Spring Tank</span>
+          <span class="node-name">Dispersive Reverb</span>
+        </div>
+        <div class="flow-arrow" aria-hidden="true">&rarr;</div>
+        <div class="flow-node">
+          <span class="node-tag">Output</span>
+          <span class="node-name">Scope &amp; Pan &amp; Gain</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main Workspace Grid -->
+    <main class="console-grid">
+      <!-- Oscilloscope & Telemetry Visualizer -->
+      <section class="panel visualizer-panel" aria-label="Oscilloscope and Telemetry Readout">
+        <div class="panel-header">
+          <h2 class="panel-title">Signal Monitor</h2>
+          <div class="scope-legend" aria-hidden="true">
+            <span class="legend-item"><span class="legend-color legend-audio"></span> Pre-Pan Waveform</span>
+            <span class="legend-item"><span class="legend-color legend-env"></span> Envelope Trajectory</span>
+          </div>
+        </div>
+
+        <div class="canvas-wrapper">
+          <canvas id="scope-canvas" width="640" height="200" aria-label="Realtime oscilloscope display"></canvas>
+          <div id="scope-overlay" class="scope-overlay">
+            <span class="scope-watermark" id="scope-state-text">AUDIO INACTIVE</span>
+          </div>
+        </div>
+
+        <div class="telemetry-bar" aria-label="Current Synthesizer State" aria-live="off">
+          <div class="telemetry-cell">
+            <span class="telemetry-label">Stage</span>
+            <span class="telemetry-value" id="tel-stage">&mdash;</span>
+          </div>
+          <div class="telemetry-cell">
+            <span class="telemetry-label">Pitch / Note</span>
+            <span class="telemetry-value" id="tel-pitch">&mdash;</span>
+          </div>
+          <div class="telemetry-cell">
+            <span class="telemetry-label">Frequency</span>
+            <span class="telemetry-value" id="tel-freq">&mdash;</span>
+          </div>
+          <div class="telemetry-cell">
+            <span class="telemetry-label">Rise / Fall</span>
+            <span class="telemetry-value" id="tel-duration">&mdash;</span>
+          </div>
+          <div class="telemetry-cell">
+            <span class="telemetry-label">LPG Resistance</span>
+            <span class="telemetry-value" id="tel-res">&mdash;</span>
+          </div>
+          <div class="telemetry-cell">
+            <span class="telemetry-label">Cycle</span>
+            <span class="telemetry-value" id="tel-cycle">&mdash;</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Primary Controls Panel -->
+      <section class="panel controls-panel" aria-label="Synthesizer Controls">
+        <div class="panel-header">
+          <h2 class="panel-title">Generator &amp; Patch Controls</h2>
+          <div class="transport-actions">
+            <button type="button" id="btn-play" class="btn btn-primary" aria-label="Start Audio">
+              <span class="btn-icon" aria-hidden="true">&#9654;</span>
+              <span id="btn-play-text">Start Synthesis</span>
+            </button>
+            <button type="button" id="btn-reseed" class="btn btn-secondary" aria-label="New Sequence Seed" title="Re-seed random generator without resetting audio graph">
+              <span class="btn-icon" aria-hidden="true">&#8635;</span>
+              <span>New Sequence</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="controls-grid">
+          <!-- Waveform Mode -->
+          <div class="control-card">
+            <fieldset class="segmented-fieldset">
+              <legend class="control-label">Oscillator Waveform</legend>
+              <div class="segmented-control" role="radiogroup" aria-label="Oscillator Waveform">
+                <div class="segmented-option">
+                  <input type="radio" name="waveform" value="0" checked id="wave-sine" aria-label="Sine Waveform">
+                  <label for="wave-sine" class="segmented-btn">Sine</label>
+                </div>
+                <div class="segmented-option">
+                  <input type="radio" name="waveform" value="1" id="wave-tri" aria-label="Triangle Waveform">
+                  <label for="wave-tri" class="segmented-btn">Triangle</label>
+                </div>
+              </div>
+            </fieldset>
+            <p class="control-caption">Sine fundamental or harmonically richer triangle waveform.</p>
+          </div>
+
+          <!-- Pace / Speed -->
+          <div class="control-card">
+            <div class="control-header">
+              <label for="param-pace" class="control-label">Pace (Rate Multiplier)</label>
+              <output for="param-pace" id="readout-pace" class="control-readout">1.00&times;</output>
+            </div>
+            <div class="slider-wrapper">
+              <input type="range" id="param-pace" name="pace" min="0.25" max="4.0" step="0.01" value="1.00" aria-label="Pace (Rate Multiplier)" aria-valuemin="0.25" aria-valuemax="4.0" aria-valuenow="1.00" aria-valuetext="1.00 times">
+            </div>
+            <div class="scale-ticks" aria-hidden="true">
+              <span>0.25&times;</span>
+              <span>1.0&times;</span>
+              <span>2.5&times;</span>
+              <span>4.0&times;</span>
+            </div>
+            <p class="control-caption">Scales rise and fall duration of the self-cycling slope generator.</p>
+          </div>
+
+          <!-- Root Frequency -->
+          <div class="control-card">
+            <div class="control-header">
+              <label for="param-root" class="control-label">Root Frequency</label>
+              <output for="param-root" id="readout-root" class="control-readout">110 Hz (A2)</output>
+            </div>
+            <div class="slider-wrapper">
+              <input type="range" id="param-root" name="root" min="55" max="440" step="1" value="110" aria-label="Root Frequency" aria-valuemin="55" aria-valuemax="440" aria-valuenow="110" aria-valuetext="110 Hertz">
+            </div>
+            <div class="scale-ticks" aria-hidden="true">
+              <span>55 Hz</span>
+              <span>110 Hz</span>
+              <span>220 Hz</span>
+              <span>440 Hz</span>
+            </div>
+            <p class="control-caption">Base center frequency for sample-and-hold pitch selection.</p>
+          </div>
+
+          <!-- Pitch Spread -->
+          <div class="control-card">
+            <div class="control-header">
+              <label for="param-spread" class="control-label">Pitch Spread</label>
+              <output for="param-spread" id="readout-spread" class="control-readout">2.00 Oct</output>
+            </div>
+            <div class="slider-wrapper">
+              <input type="range" id="param-spread" name="spread" min="0" max="4" step="0.05" value="2" aria-label="Pitch Spread" aria-valuemin="0" aria-valuemax="4" aria-valuenow="2" aria-valuetext="2.00 Octaves">
+            </div>
+            <div class="scale-ticks" aria-hidden="true">
+              <span>0 Oct</span>
+              <span>1 Oct</span>
+              <span>2 Oct</span>
+              <span>4 Oct</span>
+            </div>
+            <p class="control-caption">Octave range width traversed by sample-and-hold random pitch generator.</p>
+          </div>
+
+          <!-- Vactrol Memory -->
+          <div class="control-card">
+            <div class="control-header">
+              <label for="param-memory" class="control-label">Vactrol Memory</label>
+              <output for="param-memory" id="readout-memory" class="control-readout">1.00&times;</output>
+            </div>
+            <div class="slider-wrapper">
+              <input type="range" id="param-memory" name="memory" min="0.4" max="2.5" step="0.01" value="1.0" aria-label="Vactrol Memory" aria-valuemin="0.4" aria-valuemax="2.5" aria-valuenow="1.0" aria-valuetext="1.00 times">
+            </div>
+            <div class="scale-ticks" aria-hidden="true">
+              <span>0.4&times; (snappy)</span>
+              <span>1.0&times; (nominal)</span>
+              <span>2.5&times; (sluggish)</span>
+            </div>
+            <p class="control-caption">Photo-resistor decay lag and history hysteresis in the simulated optocoupler.</p>
+          </div>
+          <!-- ARP MODAMP Amount -->
+          <div class="control-card">
+            <div class="control-header">
+              <label for="param-modamp" class="control-label">MODAMP Amount</label>
+              <output for="param-modamp" id="readout-modamp" class="control-readout">100%</output>
+            </div>
+            <div class="slider-wrapper">
+              <input type="range" id="param-modamp" name="modamp" min="0" max="1" step="0.01" value="1" aria-label="MODAMP Amount" aria-valuemin="0" aria-valuemax="1" aria-valuenow="1.00" aria-valuetext="100 percent">
+            </div>
+            <div class="scale-ticks" aria-hidden="true">
+              <span>0% (Silence)</span>
+              <span>50%</span>
+              <span>100%</span>
+            </div>
+            <p class="control-caption">Carrier amplitude for pure balanced multiplication (no dry blending; 0% is silence).</p>
+          </div>
+
+          <!-- MODAMP Frequency -->
+          <div class="control-card">
+            <div class="control-header">
+              <label for="param-modRate" class="control-label">MODAMP Frequency</label>
+              <output for="param-modRate" id="readout-modRate" class="control-readout">73 Hz</output>
+            </div>
+            <div class="slider-wrapper">
+              <input type="range" id="param-modRate" name="modRate" min="10" max="1000" step="1" value="73" aria-label="MODAMP Frequency" aria-valuemin="10" aria-valuemax="1000" aria-valuenow="73" aria-valuetext="73 Hertz">
+            </div>
+            <div class="scale-ticks" aria-hidden="true">
+              <span>10 Hz</span>
+              <span>73 Hz</span>
+              <span>250 Hz</span>
+              <span>1000 Hz</span>
+            </div>
+            <p class="control-caption">Modulation carrier frequency generating sum and difference sidebands across the entire voice signal.</p>
+          </div>
+
+          <!-- Spring Reverb Level -->
+          <div class="control-card">
+            <div class="control-header">
+              <label for="param-spring" class="control-label">Spring Reverb</label>
+              <output for="param-spring" id="readout-spring" class="control-readout">0%</output>
+            </div>
+            <div class="slider-wrapper">
+              <input type="range" id="param-spring" name="spring" min="0" max="1" step="0.01" value="0" aria-label="Spring Reverb Amount" aria-valuemin="0" aria-valuemax="1" aria-valuenow="0" aria-valuetext="0 percent">
+            </div>
+            <div class="scale-ticks" aria-hidden="true">
+              <span>0% (Dry)</span>
+              <span>50%</span>
+              <span>100%</span>
+            </div>
+            <p class="control-caption">Final sound-shaping stage: synthetic dispersive delay tank model with metallic chirp and spring resonance.</p>
+          </div>
+          <!-- Master Stereo Pan -->
+          <div class="control-card">
+            <div class="control-header">
+              <label for="param-pan" class="control-label">Stereo Pan</label>
+              <output for="param-pan" id="readout-pan" class="control-readout">Center (C)</output>
+            </div>
+            <div class="slider-wrapper">
+              <input type="range" id="param-pan" name="pan" min="-1" max="1" step="0.02" value="0" aria-label="Stereo Pan" aria-valuemin="-1" aria-valuemax="1" aria-valuenow="0" aria-valuetext="Center (C)">
+            </div>
+            <div class="scale-ticks" aria-hidden="true">
+              <span>Left (L)</span>
+              <span>Center (C)</span>
+              <span>Right (R)</span>
+            </div>
+            <p class="control-caption">Stereo field placement via native StereoPannerNode with 20ms smoothing.</p>
+          </div>
+
+          <!-- Master Gain -->
+          <div class="control-card">
+            <div class="control-header">
+              <label for="param-gain" class="control-label">Master Level</label>
+              <output for="param-gain" id="readout-gain" class="control-readout">&minus;14.9 dB (0.18)</output>
+            </div>
+            <div class="slider-wrapper">
+              <input type="range" id="param-gain" name="gain" min="0" max="0.5" step="0.005" value="0.18" aria-label="Master Level" aria-valuemin="0" aria-valuemax="0.5" aria-valuenow="0.18" aria-valuetext="-14.9 dB (0.18)">
+            </div>
+            <div class="scale-ticks" aria-hidden="true">
+              <span>Mute</span>
+              <span>0.18 (Nominal)</span>
+              <span>0.50 (Max Limit)</span>
+            </div>
+            <p class="control-caption">Master output level attenuation (clamped to max 0.50).</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Technical Architecture Documentation Panel -->
+      <section class="panel about-panel" aria-label="Technical Details">
+        <h2 class="panel-title">About the Krell Patch Topology</h2>
+        <div class="about-content">
+          <p>
+            In a self-cycling Krell patch, the synthesizer governs its own timing without an external clock or sequencer:
+          </p>
+          <ul class="principles-list">
+            <li><strong>Self-Cycling Slope:</strong> A function generator cycles through rise and fall phases. Completing the fall phase triggers random sample-and-hold stages.</li>
+            <li><strong>Dynamic Parameter Selection:</strong> Each cycle samples a new oscillator pitch and updates the rise and fall durations for the subsequent cycle.</li>
+            <li><strong>Low-Pass Gate:</strong> The signal routes through a 292-inspired LPG operating in Both mode (simultaneous variable low-pass filtering and attenuation). The control envelope modulates gate openness; the heuristic vactrol model imparts characteristic asymmetric optocoupler decay.</li>
+            <li><strong>ARP MODAMP (Balanced Modulator Model):</strong> A functional model inspired by the ARP 2500 Model 1005 ModAmp (<a href="https://www.guitarfool.com/ARP2500/4014.pdf" target="_blank" rel="noopener noreferrer">4014 schematic</a> and <a href="https://djjondent.blogspot.com/2014/11/the-arp-2500-1005-modamp-module.html" target="_blank" rel="noopener noreferrer">1005 MODAMP description</a>). The 4014/1005 is a balanced modulator rather than reverb hardware. Here it performs pure bipolar signal multiplication with a sine carrier oscillator (10&ndash;1000 Hz) before reverb, producing sum and difference sidebands across the entire voice without dry blending. This is a functional signal multiplication model, not a transistor-exact circuit simulation.</li>
+            <li><strong>Spring Reverb (Dispersive Tank Model):</strong> Positioned at the end of the musical processing chain as the final sound-shaping stage before oscilloscope analysis, stereo panning, and master level control. Serial synthetic dispersive delay network with chirped dispersion and metallic reflection; not a sampled impulse response or physical spring emulation.</li>
+          </ul>
+          <h3 class="panel-title">References &amp; Documentation</h3>
+          <ul class="principles-list">
+            <li><a href="https://dafx.de/paper-archive/2013/papers/44.dafx2013_submission_56.pdf" target="_blank" rel="noopener noreferrer">A Digital Model of the Buchla Lowpass-Gate — Parker &amp; D&rsquo;Angelo, DAFx 2013 (PDF)</a>: audio circuit, topology-preserving discretization, and vactrol response.</li>
+            <li><a href="https://www.guitarfool.com/ARP2500/4014.pdf" target="_blank" rel="noopener noreferrer">ARP 4014 Balanced Modulator schematic (PDF)</a>: two two-quadrant multiplier paths and amplifier stages.</li>
+            <li><a href="https://djjondent.blogspot.com/2014/11/the-arp-2500-1005-modamp-module.html" target="_blank" rel="noopener noreferrer">ARP 2500 Model 1005 MODAMP documentation</a>: balanced multiplication, controls, and module examples.</li>
+            <li><a href="https://developer.mozilla.org/en-US/docs/Web/API/AudioWorklet" target="_blank" rel="noopener noreferrer">Web Audio AudioWorklet documentation</a>: audio-thread processing used by the voice and effects.</li>
+          </ul>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>Vanilla Web Audio &bull; AudioWorklet &bull; Zero Frameworks</span>
+      <span>DAFx-13 Parker &amp; D&rsquo;Angelo LPG Model</span>
+    </footer>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

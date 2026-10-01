@@ -1,0 +1,12 @@
+{
+  "name": "krell",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A self-cycling Krell synthesizer with a topology-preserving Buchla-inspired lowpass gate.",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test"
+  }
+}
