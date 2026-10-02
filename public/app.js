@@ -4,10 +4,10 @@
  * Architecture:
  * - Web Audio API with single lazily constructed AudioContext
  * - Voice/LPG -> MODAMP depth -> final spring -> analyser -> pan -> master
- * - Voice AudioParams: pace, root, spread, memory, waveform
+ * - Voice AudioParams: pace, root, spread, memory, waveform, timbre
  * - Effects AudioParams: modamp depth (0..1), modRate (10..1000 Hz), spring return (0..1)
  * - Native pan: -1..1, master gain: 0..0.5
- * - Smooth bipolar random LFO -> signed native GainNodes -> eight shaping AudioParams
+ * - Smooth bipolar random LFO -> signed native GainNodes -> nine shaping AudioParams
  * - 20ms setTargetAtTime smoothing on native pan and gain
  * - Bi-directional Worklet communication:
  *     Inbound telemetry: { type: 'telemetry', envelope, frequency, cycle, stage, rise, fall, resistance }
@@ -35,6 +35,8 @@ function freqToNoteName(freq) {
 
 // One correlated audio-thread source; depth is a signed fraction of each span.
 const lfoTargets = {
+  waveform: { node: 'workletNode', span: 0.5 },
+  timbre: { node: 'workletNode', span: 0.5 },
   pace: { node: 'workletNode', span: 1.875 },
   root: { node: 'workletNode', span: 192.5 },
   spread: { node: 'workletNode', span: 2 },
@@ -44,7 +46,6 @@ const lfoTargets = {
   spring: { node: 'effectsNode', span: 0.5 },
   pan: { node: 'pannerNode', span: 1 }
 };
-
 function deriveLfoSeed(seed) {
   let mixed = (seed ^ 0x9e3779b9) >>> 0;
   mixed = Math.imul(mixed ^ (mixed >>> 16), 0x85ebca6b);
@@ -74,7 +75,8 @@ const state = {
 
   // Control parameter cache (applied before or after graph exists)
   params: {
-    waveform: 0,   // 0 = sine, 1 = triangle
+    waveform: 0.0, // 0 = sine .. 0.33 = tri .. 0.67 = saw .. 1.0 = sq
+    timbre: 0.0,   // 0 .. 1 Buchla 259 wavefolder depth
     pace: 1.0,     // 0.25 .. 16.0
     root: 110.0,   // 55 .. 440 Hz
     spread: 2.0,   // 0 .. 4 octaves
@@ -87,6 +89,8 @@ const state = {
   },
   lfoPeriod: 3,
   attenuverters: {
+    waveform: 0,
+    timbre: 0,
     pace: 0,
     root: 0,
     spread: 0,
@@ -96,7 +100,6 @@ const state = {
     spring: 0,
     pan: 0
   },
-  lfoTelemetry: { value: null, segment: 0, period: 3 },
   telemetry: {
     envelope: 0,
     frequency: 110,
@@ -129,8 +132,10 @@ const elements = {
   btnReseed: document.getElementById('btn-reseed'),
 
   // Controls
-  radioSine: document.getElementById('wave-sine'),
-  radioTri: document.getElementById('wave-tri'),
+  paramWaveform: document.getElementById('param-waveform'),
+  readoutWaveform: document.getElementById('readout-waveform'),
+  paramTimbre: document.getElementById('param-timbre'),
+  readoutTimbre: document.getElementById('readout-timbre'),
   paramPace: document.getElementById('param-pace'),
   paramRoot: document.getElementById('param-root'),
   paramSpread: document.getElementById('param-spread'),
@@ -236,6 +241,44 @@ function updateGainReadout(val) {
   if (elements.paramGain) {
     elements.paramGain.setAttribute('aria-valuenow', val.toFixed(3));
     elements.paramGain.setAttribute('aria-valuetext', text);
+  }
+}
+
+function updateWaveformReadout(val) {
+  const num = Number(val);
+  let text;
+  if (num <= 0.04) {
+    text = 'Sine';
+  } else if (num >= 0.29 && num <= 0.37) {
+    text = 'Triangle';
+  } else if (num >= 0.62 && num <= 0.71) {
+    text = 'Sawtooth';
+  } else if (num >= 0.96) {
+    text = 'Square';
+  } else if (num < 0.333333) {
+    const pct = Math.round((num / 0.333333) * 100);
+    text = `Sine \u2192 Tri (${pct}%)`;
+  } else if (num < 0.666667) {
+    const pct = Math.round(((num - 0.333333) / 0.333334) * 100);
+    text = `Tri \u2192 Saw (${pct}%)`;
+  } else {
+    const pct = Math.round(((num - 0.666667) / 0.333333) * 100);
+    text = `Saw \u2192 Sq (${pct}%)`;
+  }
+  if (elements.readoutWaveform) elements.readoutWaveform.textContent = text;
+  if (elements.paramWaveform) {
+    elements.paramWaveform.setAttribute('aria-valuenow', num.toFixed(2));
+    elements.paramWaveform.setAttribute('aria-valuetext', text);
+  }
+}
+
+function updateTimbreReadout(val) {
+  const percent = Math.round(Number(val) * 100);
+  const text = `${percent}%`;
+  if (elements.readoutTimbre) elements.readoutTimbre.textContent = text;
+  if (elements.paramTimbre) {
+    elements.paramTimbre.setAttribute('aria-valuenow', Number(val).toFixed(2));
+    elements.paramTimbre.setAttribute('aria-valuetext', `${percent} percent wavefolder depth`);
   }
 }
 
@@ -385,6 +428,7 @@ function applyAllParamsToGraph() {
   if (!state.workletNode || !state.audioCtx) return;
 
   setWorkletParam('waveform', state.params.waveform);
+  setWorkletParam('timbre', state.params.timbre);
   setWorkletParam('pace', state.params.pace);
   setWorkletParam('root', state.params.root);
   setWorkletParam('spread', state.params.spread);
@@ -1085,16 +1129,25 @@ function setupEventListeners() {
     elements.btnReseed.addEventListener('click', reseed);
   }
 
-  // Waveform Radio buttons
-  const waveRadios = [elements.radioSine, elements.radioTri];
-  waveRadios.forEach((radio) => {
-    if (!radio) return;
-    radio.addEventListener('change', (e) => {
+  // Waveform Slider
+  if (elements.paramWaveform) {
+    elements.paramWaveform.addEventListener('input', (e) => {
       const val = parseFloat(e.target.value);
       state.params.waveform = val;
+      updateWaveformReadout(val);
       setWorkletParam('waveform', val);
     });
-  });
+  }
+
+  // Timbre Waveshaper Slider
+  if (elements.paramTimbre) {
+    elements.paramTimbre.addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value);
+      state.params.timbre = val;
+      updateTimbreReadout(val);
+      setWorkletParam('timbre', val);
+    });
+  }
 
   if (elements.lfoPeriod) {
     elements.lfoPeriod.addEventListener('input', (e) => {
@@ -1282,10 +1335,13 @@ function initApp() {
     state.params.gain = parseFloat(elements.paramGain.value);
     updateGainReadout(state.params.gain);
   }
-  if (elements.radioTri && elements.radioTri.checked) {
-    state.params.waveform = 1;
-  } else {
-    state.params.waveform = 0;
+  if (elements.paramWaveform) {
+    state.params.waveform = parseFloat(elements.paramWaveform.value);
+    updateWaveformReadout(state.params.waveform);
+  }
+  if (elements.paramTimbre) {
+    state.params.timbre = parseFloat(elements.paramTimbre.value);
+    updateTimbreReadout(state.params.timbre);
   }
 
   setupEventListeners();

@@ -15,8 +15,8 @@ class KrellWorkletProcessor extends AudioWorkletProcessor {
    * root: 110.0 (55 .. 440 Hz)
    * spread: 2.0 (0 .. 4 octaves)
    * memory: 1.0 (0.4 .. 2.5)
-   * waveform: 0.0 (0 = sine, 1 = triangle)
-   */
+   * waveform: 0.0 (0 = sine .. 0.33 = tri .. 0.67 = saw .. 1.0 = sq)
+   * timbre: 0.0 (0.0 .. 1.0)
   static get parameterDescriptors() {
     return [
       {
@@ -53,8 +53,14 @@ class KrellWorkletProcessor extends AudioWorkletProcessor {
         minValue: 0.0,
         maxValue: 1.0,
         automationRate: 'k-rate'
+      },
+      {
+        name: 'timbre',
+        defaultValue: 0.0,
+        minValue: 0.0,
+        maxValue: 1.0,
+        automationRate: 'k-rate'
       }
-    ];
   }
 
   constructor(options) {
@@ -69,8 +75,8 @@ class KrellWorkletProcessor extends AudioWorkletProcessor {
       root: 110.0,
       spread: 2.0,
       memory: 1.0,
-      waveform: 0.0
-    };
+      waveform: 0.0,
+      timbre: 0.0
 
     // Telemetry throttling: 12 Hz rate
     this.telemetryEnabled = true;
@@ -105,7 +111,7 @@ class KrellWorkletProcessor extends AudioWorkletProcessor {
     this.controls.spread = parameters.spread?.[0] ?? 2.0;
     this.controls.memory = parameters.memory?.[0] ?? 1.0;
     this.controls.waveform = parameters.waveform?.[0] ?? 0.0;
-
+    this.controls.timbre = parameters.timbre?.[0] ?? 0.0;
     // Render audio block
     this.voice.render(channel, this.controls);
 

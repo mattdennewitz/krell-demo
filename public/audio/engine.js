@@ -138,31 +138,138 @@ function createMulberry32(seed) {
 }
 
 // ---------------------------------------------------------------------------
-// PRECOMPUTED BANDLIMITED HARMONIC WAVETABLES FOR TRIANGLE OSCILLATOR
+// PRECOMPUTED BANDLIMITED HARMONIC WAVETABLES FOR OSCILLATOR
 // ---------------------------------------------------------------------------
 const TABLE_SIZE = 2048;
 const NUM_HARMONIC_TABLES = 10;
 const triangleWavetables = [];
+const sawWavetables = [];
+const squareWavetables = [];
 
 (function initHarmonicTables() {
   for (let t = 0; t < NUM_HARMONIC_TABLES; t++) {
     const maxHarmonic = Math.max(1, Math.floor(512 / Math.pow(2, t)));
-    const table = new Float32Array(TABLE_SIZE);
+    const triTable = new Float32Array(TABLE_SIZE);
+    const sawTable = new Float32Array(TABLE_SIZE);
+    const sqTable = new Float32Array(TABLE_SIZE);
+
     for (let n = 0; n < TABLE_SIZE; n++) {
       const phase = (2 * Math.PI * n) / TABLE_SIZE;
-      let sum = 0;
+
+      // Triangle: (8 / pi^2) * sum_{k=0} (-1)^k / (2k+1)^2 * sin((2k+1)*phase)
+      let sumTri = 0;
       for (let k = 0; ; k++) {
         const harm = 2 * k + 1;
         if (harm > maxHarmonic) break;
         const sign = (k % 2 === 0) ? 1 : -1;
-        sum += (sign / (harm * harm)) * Math.sin(harm * phase);
+        sumTri += (sign / (harm * harm)) * Math.sin(harm * phase);
       }
-      table[n] = (8 / (Math.PI * Math.PI)) * sum;
+      triTable[n] = (8 / (Math.PI * Math.PI)) * sumTri;
+
+      // Sawtooth (phase-aligned with sine fundamental):
+      // (2 / pi) * sum_{k=1} (-1)^(k+1) / k * sin(k * phase)
+      let sumSaw = 0;
+      for (let k = 1; k <= maxHarmonic; k++) {
+        const sign = (k % 2 === 1) ? 1 : -1;
+        sumSaw += (sign / k) * Math.sin(k * phase);
+      }
+      sawTable[n] = (2 / Math.PI) * sumSaw;
+
+      // Square: (4 / pi) * sum_{k=0} 1 / (2k+1) * sin((2k+1)*phase)
+      let sumSq = 0;
+      for (let k = 0; ; k++) {
+        const harm = 2 * k + 1;
+        if (harm > maxHarmonic) break;
+        sumSq += (1 / harm) * Math.sin(harm * phase);
+      }
+      sqTable[n] = (4 / Math.PI) * sumSq;
     }
-    triangleWavetables.push({ maxHarmonic, table });
+
+    triangleWavetables.push({ maxHarmonic, table: triTable });
+    sawWavetables.push({ maxHarmonic, table: sawTable });
+    squareWavetables.push({ maxHarmonic, table: sqTable });
   }
 })();
 
+/**
+ * Buchla 259 Timbre Circuit / Wavefolder
+ *
+ * Implements the virtual analog Buchla 259 wavefolder modeled by
+ * Esqueda, Pöntynen, Välimäki, & Parker (DAFx-17, Edinburgh, 2017).
+ *
+ * The circuit features 5 parallel op-amp deadband center-clipping folding cells
+ * plus a direct signal path, summed and filtered by a 1-pole lowpass filter
+ * (R_F2 = 1.2 MΩ, C = 100 pF -> fc ≈ 1.33 kHz) discretized via the bilinear transform.
+ */
+export class BuchlaTimbre {
+  /**
+   * @param {number} sampleRate Processing sample rate in Hz (e.g. 2x oversampled rate)
+   */
+  constructor(sampleRate) {
+    this.sampleRate = sampleRate;
+
+    // Output 1-pole lowpass filter at fc ≈ 1326.29 Hz (1.2 MΩ, 100 pF)
+    // Bilinear transform: H(z) = (b0 + b1*z^-1) / (1 + a1*z^-1)
+    const fc = 1326.291;
+    const wc = 2.0 * Math.PI * fc;
+    const T = 1.0 / sampleRate;
+    const denom = 2.0 + wc * T;
+    this.b0 = (wc * T) / denom;
+    this.b1 = this.b0;
+    this.a1 = (wc * T - 2.0) / denom;
+
+    this.x1 = 0.0;
+    this.y1 = 0.0;
+  }
+
+  /**
+   * Reset filter states
+   */
+  reset() {
+    this.x1 = 0.0;
+    this.y1 = 0.0;
+  }
+
+  /**
+   * Process a single audio sample through the 5-cell Buchla 259 wavefolder.
+   *
+   * @param {number} input Normalized input sample in [-1, 1]
+   * @param {number} timbre Timbre / fold amount [0 .. 1]
+   * @returns {number} Folded output sample Vo
+   */
+  process(input, timbre) {
+    const t = Math.max(0.0, Math.min(1.0, timbre));
+
+    // Input drive: linear range is below 0.60V threshold.
+    // At timbre = 0, drive = 0.55V (|Vin| <= 0.55 < 0.60V: all 5 folding cells in deadband).
+    // At timbre = 1, drive = 6.00V, progressively activating all 5 folding stages:
+    // cell 1 (0.60V), cell 4 (1.80V), cell 2 (2.994V), cell 5 (4.08V), cell 3 (5.46V).
+    const drive = 0.55 + 5.45 * t;
+    const vin = drive * input;
+
+    // 5 parallel op-amp deadband center-clipping cells (Eqs. 13-17)
+    const s = vin > 0.0 ? 1.0 : (vin < 0.0 ? -1.0 : 0.0);
+    const av = Math.abs(vin);
+
+    const v1 = av > 0.6000 ? (0.8333 * vin - 0.5000 * s) : 0.0;
+    const v2 = av > 2.9940 ? (0.3768 * vin - 1.1281 * s) : 0.0;
+    const v3 = av > 5.4600 ? (0.2829 * vin - 1.5446 * s) : 0.0;
+    const v4 = av > 1.8000 ? (0.5743 * vin - 1.0338 * s) : 0.0;
+    const v5 = av > 4.0800 ? (0.2673 * vin - 1.0907 * s) : 0.0;
+
+    // Summing amplifier stage (Eq. 9) with direct path (+5.000 * vin)
+    const vSum = -12.000 * v1 - 27.777 * v2 - 21.428 * v3 + 17.647 * v4 + 36.363 * v5 + 5.000 * vin;
+
+    // Bilinear transform 1-pole lowpass filter (fc ≈ 1.33 kHz)
+    const vout = this.b0 * vSum + this.b1 * this.x1 - this.a1 * this.y1;
+    this.x1 = vSum;
+    this.y1 = vout;
+
+    // Normalize: at timbre = 0, DC / linear gain is direct path gain (5.0) * base drive (0.55) = 2.75.
+    // Dividing by 2.75 preserves unity amplitude for input.
+    return vout / 2.75;
+  }
+}
 /**
  * Buchla 292 Vactrol Lowpass Gate (Both Mode)
  *
@@ -255,7 +362,8 @@ export class BuchlaLPG {
  * Complete Krell Synthesizer Voice
  *
  * Implements sample-clocked envelope cycling, S&H pitch/duration logic,
- * dual sine/triangle oscillator, and 2x oversampled Buchla LPG with decimation.
+ * continuously variable wave-shape oscillator (Sine -> Triangle -> Saw -> Square),
+ * Buchla 259 timbre waveshaper, and 2x oversampled Buchla 292 LPG with decimation.
  */
 export class KrellVoice {
   /**
@@ -264,9 +372,12 @@ export class KrellVoice {
    */
   constructor(sampleRate, seed = 1337) {
     this.sampleRate = sampleRate;
-    // 2x oversampling rate for audio oscillator & LPG
+    // 2x oversampling rate for audio oscillator, timbre folder & LPG
     this.internalRate = sampleRate * 2;
     this.dtInternal = 1.0 / this.internalRate;
+
+    // Buchla 259 Timbre circuit / wavefolder running at 2x rate
+    this.timbreShaper = new BuchlaTimbre(this.internalRate);
 
     // Internal LPG running at 2x oversampled rate
     this.lpg = new BuchlaLPG(this.internalRate);
@@ -275,10 +386,10 @@ export class KrellVoice {
     this.reseed(seed);
 
     // Precompute smoothing filter coefficients for 2x internal rate
-    // 8ms pitch slew, 20ms waveform slew
+    // 8ms pitch slew, 20ms waveform slew, 20ms timbre slew
     this.freqAlpha = 1.0 - Math.exp(-this.dtInternal / 0.008);
     this.waveAlpha = 1.0 - Math.exp(-this.dtInternal / 0.020);
-
+    this.timbreAlpha = 1.0 - Math.exp(-this.dtInternal / 0.020);
     // Function generator states
     this.stage = 'rise';
     this.stageProgress = 0.0; // Normalized progress in [0, 1]
@@ -298,10 +409,10 @@ export class KrellVoice {
     this.currentFrequency = 110.0;
     this.targetFrequency = 110.0;
 
-    // Waveform & Oscillator states
+    // Waveform, Timbre & Oscillator states
     this.phase = 0.0;
     this.smoothedWaveform = 0.0;
-
+    this.smoothedTimbre = 0.0;
     // 15-tap Halfband Decimation FIR Circular Buffer
     this.firBuffer = new Float32Array(16);
     this.firIndex = 0;
@@ -336,7 +447,8 @@ export class KrellVoice {
    * @param {number} [controls.root=110.0] Root pitch in Hz [55 .. 440]
    * @param {number} [controls.spread=2.0] Pitch spread in octaves [0 .. 4]
    * @param {number} [controls.memory=1.0] Vactrol decay memory [0.4 .. 2.5]
-   * @param {number} [controls.waveform=0.0] Waveform blend (0 = sine, 1 = triangle)
+   * @param {number} [controls.waveform=0.0] Variable wave shape [0 = sine .. 0.33 = tri .. 0.67 = saw .. 1.0 = sq]
+   * @param {number} [controls.timbre=0.0] Buchla 259 timbre / wavefolder depth [0 .. 1]
    */
   render(output, controls) {
     const pace = Math.max(0.25, Math.min(16.0, controls.pace ?? 1.0));
@@ -344,11 +456,12 @@ export class KrellVoice {
     const spread = Math.max(0.0, Math.min(4.0, controls.spread ?? 2.0));
     const memory = Math.max(0.4, Math.min(2.5, controls.memory ?? 1.0));
     const targetWave = Math.max(0.0, Math.min(1.0, controls.waveform ?? 0.0));
-
+    const targetTimbre = Math.max(0.0, Math.min(1.0, controls.timbre ?? 0.0));
     const dt = this.dtInternal;
     const len = output.length;
     const freqAlpha = this.freqAlpha;
     const waveAlpha = this.waveAlpha;
+    const timbreAlpha = this.timbreAlpha;
 
     // Symmetric 15-tap halfband FIR decimator non-zero coefficients
     const h0 = -0.003651;
@@ -407,47 +520,70 @@ export class KrellVoice {
           }
         }
 
-        // Smooth pitch and waveform transitions
+        // Smooth pitch, waveform and timbre transitions
         this.currentFrequency += freqAlpha * (this.targetFrequency - this.currentFrequency);
         this.smoothedWaveform += waveAlpha * (targetWave - this.smoothedWaveform);
-
+        this.smoothedTimbre += timbreAlpha * (targetTimbre - this.smoothedTimbre);
         // Audio oscillator phase accumulator
         this.phase += this.currentFrequency * dt;
         if (this.phase >= 1.0) {
           this.phase -= Math.floor(this.phase);
         }
 
-        // Pure sine wave
+        // Pure sine wave fundamental
         const sine = Math.sin(2.0 * Math.PI * this.phase);
 
-        let osc;
+        let rawOsc;
         if (this.smoothedWaveform <= 0.0001) {
-          // Skip triangle table lookup when waveform blend is negligible
-          osc = sine;
+          // Pure sine when wave shape is 0
+          rawOsc = sine;
         } else {
-          // Bandlimited triangle from precomputed harmonic tables
+          // Bandlimited tables selected by frequency
           const maxHarmonicAllowed = Math.floor((this.internalRate * 0.5) / this.currentFrequency);
           let tableIdx = 0;
           while (tableIdx < NUM_HARMONIC_TABLES - 1 && triangleWavetables[tableIdx].maxHarmonic > maxHarmonicAllowed) {
             tableIdx++;
           }
-          const tbl = triangleWavetables[tableIdx].table;
-          const pIdx = this.phase * TABLE_SIZE;
-          const i0 = Math.floor(pIdx);
-          const frac = pIdx - i0;
-          const i1 = (i0 + 1) & (TABLE_SIZE - 1);
-          const tri = tbl[i0] + frac * (tbl[i1] - tbl[i0]);
 
-          osc = (1.0 - this.smoothedWaveform) * sine + this.smoothedWaveform * tri;
+          const pIdx = this.phase * TABLE_SIZE;
+          const i0 = Math.floor(pIdx) & (TABLE_SIZE - 1);
+          const frac = pIdx - Math.floor(pIdx);
+          const i1 = (i0 + 1) & (TABLE_SIZE - 1);
+
+          const triTbl = triangleWavetables[tableIdx].table;
+          const tri = triTbl[i0] + frac * (triTbl[i1] - triTbl[i0]);
+
+          const s = this.smoothedWaveform;
+          if (s <= 0.333333) {
+            // Sine -> Triangle morph [0 .. 0.333]
+            const t = s / 0.333333;
+            rawOsc = (1.0 - t) * sine + t * tri;
+          } else if (s <= 0.666667) {
+            // Triangle -> Sawtooth morph [0.333 .. 0.667]
+            const sawTbl = sawWavetables[tableIdx].table;
+            const saw = sawTbl[i0] + frac * (sawTbl[i1] - sawTbl[i0]);
+            const t = (s - 0.333333) / 0.333334;
+            rawOsc = (1.0 - t) * tri + t * saw;
+          } else {
+            // Sawtooth -> Square morph [0.667 .. 1.0]
+            const sawTbl = sawWavetables[tableIdx].table;
+            const saw = sawTbl[i0] + frac * (sawTbl[i1] - sawTbl[i0]);
+            const sqTbl = squareWavetables[tableIdx].table;
+            const sq = sqTbl[i0] + frac * (sqTbl[i1] - sqTbl[i0]);
+            const t = (s - 0.666667) / 0.333333;
+            rawOsc = (1.0 - t) * saw + t * sq;
+          }
         }
 
+        // Buchla 259 Timbre circuit / wavefolder process
+        const shapedOsc = this.timbreShaper.process(rawOsc, this.smoothedTimbre);
         // Krell patch control drive:
         // Quadratic drive to 1 mA leaves room for the vactrol to close between
         // notes; the coupled circuit determines both attenuation and brightness.
         const ledCurrent = 10.0e-6 + (1.0e-3 - 10.0e-6) * (this.envelope * this.envelope);
 
         // Buchla 292 LPG process
-        const lpgOut = this.lpg.process(osc, ledCurrent, memory);
+        const lpgOut = this.lpg.process(shapedOsc, ledCurrent, memory);
 
         // Store into circular FIR buffer
         this.firBuffer[this.firIndex] = lpgOut;
