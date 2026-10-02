@@ -17,6 +17,7 @@ class KrellWorkletProcessor extends AudioWorkletProcessor {
    * memory: 1.0 (0.4 .. 2.5)
    * waveform: 0.0 (0 = sine .. 0.33 = tri .. 0.67 = saw .. 1.0 = sq)
    * timbre: 0.0 (0.0 .. 1.0)
+   */
   static get parameterDescriptors() {
     return [
       {
@@ -61,8 +62,8 @@ class KrellWorkletProcessor extends AudioWorkletProcessor {
         maxValue: 1.0,
         automationRate: 'k-rate'
       }
+    ];
   }
-
   constructor(options) {
     super();
 
@@ -77,7 +78,7 @@ class KrellWorkletProcessor extends AudioWorkletProcessor {
       memory: 1.0,
       waveform: 0.0,
       timbre: 0.0
-
+    };
     // Telemetry throttling: 12 Hz rate
     this.telemetryEnabled = true;
     this.telemetryIntervalSamples = Math.max(1, Math.round(sampleRate / 12));

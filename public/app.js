@@ -100,6 +100,7 @@ const state = {
     spring: 0,
     pan: 0
   },
+  lfoTelemetry: { value: null, segment: 0, period: 3 },
   telemetry: {
     envelope: 0,
     frequency: 110,
