@@ -429,8 +429,13 @@ async function initAudioGraph() {
       handleContextStateChange();
     });
 
+    // Start playback while the initial Play tap still carries mobile user
+    // activation. Safari may reject resume() after awaiting worklet downloads.
+    const playback = ctx.resume();
+
     // Load worklet modules (voice generator and reverb effects)
     await Promise.all([
+      playback,
       ctx.audioWorklet.addModule(new URL('./audio/krell-worklet.js', import.meta.url)),
       ctx.audioWorklet.addModule(new URL('./audio/reverb-worklet.js', import.meta.url))
     ]);
