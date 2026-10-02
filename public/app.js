@@ -75,7 +75,7 @@ const state = {
   // Control parameter cache (applied before or after graph exists)
   params: {
     waveform: 0,   // 0 = sine, 1 = triangle
-    pace: 1.0,     // 0.25 .. 4.0
+    pace: 1.0,     // 0.25 .. 16.0
     root: 110.0,   // 55 .. 440 Hz
     spread: 2.0,   // 0 .. 4 octaves
     memory: 1.0,   // 0.4 .. 2.5

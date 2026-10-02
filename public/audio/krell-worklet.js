@@ -11,7 +11,7 @@ import { KrellVoice } from './engine.js';
 class KrellWorkletProcessor extends AudioWorkletProcessor {
   /**
    * AudioParam descriptors:
-   * pace: 1.0 (0.25 .. 4.0)
+   * pace: 1.0 (0.25 .. 16.0)
    * root: 110.0 (55 .. 440 Hz)
    * spread: 2.0 (0 .. 4 octaves)
    * memory: 1.0 (0.4 .. 2.5)
@@ -23,7 +23,7 @@ class KrellWorkletProcessor extends AudioWorkletProcessor {
         name: 'pace',
         defaultValue: 1.0,
         minValue: 0.25,
-        maxValue: 4.0,
+        maxValue: 16.0,
         automationRate: 'k-rate'
       },
       {

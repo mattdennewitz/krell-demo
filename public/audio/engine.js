@@ -332,14 +332,14 @@ export class KrellVoice {
    *
    * @param {Float32Array} output Destination buffer (any block length)
    * @param {Object} controls Parameter dictionary
-   * @param {number} [controls.pace=1.0] Rate multiplier [0.25 .. 4.0]
+   * @param {number} [controls.pace=1.0] Rate multiplier [0.25 .. 16.0]
    * @param {number} [controls.root=110.0] Root pitch in Hz [55 .. 440]
    * @param {number} [controls.spread=2.0] Pitch spread in octaves [0 .. 4]
    * @param {number} [controls.memory=1.0] Vactrol decay memory [0.4 .. 2.5]
    * @param {number} [controls.waveform=0.0] Waveform blend (0 = sine, 1 = triangle)
    */
   render(output, controls) {
-    const pace = Math.max(0.25, Math.min(4.0, controls.pace ?? 1.0));
+    const pace = Math.max(0.25, Math.min(16.0, controls.pace ?? 1.0));
     const root = Math.max(55.0, Math.min(440.0, controls.root ?? 110.0));
     const spread = Math.max(0.0, Math.min(4.0, controls.spread ?? 2.0));
     const memory = Math.max(0.4, Math.min(2.5, controls.memory ?? 1.0));
