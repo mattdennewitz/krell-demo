@@ -3,10 +3,11 @@
  *
  * Architecture:
  * - Web Audio API with single lazily constructed AudioContext
- * - AudioWorklet node ('krell-voice') -> AudioWorklet node ('krell-reverb': pure MODAMP -> spring reverb) -> AnalyserNode -> StereoPannerNode -> GainNode -> destination
+ * - Voice/LPG -> MODAMP depth -> final spring -> analyser -> pan -> master
  * - Voice AudioParams: pace, root, spread, memory, waveform
- * - Effects AudioParams: modamp (0..1, carrier amplitude), modRate (10..1000 Hz), spring (0..1, wet return level)
- * - Native pan: -1..1, master gain: 0..0.5 (safe ceiling)
+ * - Effects AudioParams: modamp depth (0..1), modRate (10..1000 Hz), spring return (0..1)
+ * - Native pan: -1..1, master gain: 0..0.5
+ * - Smooth bipolar random LFO -> signed native GainNodes -> eight shaping AudioParams
  * - 20ms setTargetAtTime smoothing on native pan and gain
  * - Bi-directional Worklet communication:
  *     Inbound telemetry: { type: 'telemetry', envelope, frequency, cycle, stage, rise, fall, resistance }
@@ -32,12 +33,33 @@ function freqToNoteName(freq) {
   return `${note}${octave}`;
 }
 
+// One correlated audio-thread source; depth is a signed fraction of each span.
+const lfoTargets = {
+  pace: { node: 'workletNode', span: 1.875 },
+  root: { node: 'workletNode', span: 192.5 },
+  spread: { node: 'workletNode', span: 2 },
+  memory: { node: 'workletNode', span: 1.05 },
+  modamp: { node: 'effectsNode', span: 0.5 },
+  modRate: { node: 'effectsNode', span: 495 },
+  spring: { node: 'effectsNode', span: 0.5 },
+  pan: { node: 'pannerNode', span: 1 }
+};
+
+function deriveLfoSeed(seed) {
+  let mixed = (seed ^ 0x9e3779b9) >>> 0;
+  mixed = Math.imul(mixed ^ (mixed >>> 16), 0x85ebca6b);
+  mixed = Math.imul(mixed ^ (mixed >>> 13), 0xc2b2ae35);
+  return (mixed ^ (mixed >>> 16)) >>> 0;
+}
+
 // State container
 const state = {
   // Audio state
   audioCtx: null,
   workletNode: null,
   effectsNode: null,
+  lfoNode: null,
+  lfoRouteGains: {},
   analyserNode: null,
   pannerNode: null,
   gainNode: null,
@@ -48,6 +70,7 @@ const state = {
 
   // Seed cache (applied on graph init if generated before first play)
   cachedSeed: null,
+  cachedLfoSeed: null,
 
   // Control parameter cache (applied before or after graph exists)
   params: {
@@ -62,6 +85,18 @@ const state = {
     pan: 0.0,       // -1 (Left) .. 1 (Right)
     gain: 0.18      // 0 .. 0.5 (nominal 0.18)
   },
+  lfoPeriod: 3,
+  attenuverters: {
+    pace: 0,
+    root: 0,
+    spread: 0,
+    memory: 0,
+    modamp: 0,
+    modRate: 0,
+    spring: 0,
+    pan: 0
+  },
+  lfoTelemetry: { value: null, segment: 0, period: 3 },
   telemetry: {
     envelope: 0,
     frequency: 110,
@@ -115,6 +150,14 @@ const elements = {
   readoutModRate: document.getElementById('readout-modRate'),
   readoutPan: document.getElementById('readout-pan'),
   readoutGain: document.getElementById('readout-gain'),
+  lfoPeriod: document.getElementById('lfo-period'),
+  readoutLfoPeriod: document.getElementById('readout-lfo-period'),
+  lfoValue: document.getElementById('lfo-value'),
+  attenuverters: Object.fromEntries(Object.keys(lfoTargets).map((target) => [target, {
+    input: document.getElementById(`atten-${target}`),
+    readout: document.getElementById(`readout-atten-${target}`),
+    reset: document.getElementById(`reset-atten-${target}`)
+  }])),
   // Scope & Telemetry
   canvas: document.getElementById('scope-canvas'),
   scopeOverlay: document.getElementById('scope-overlay'),
@@ -264,6 +307,44 @@ function updateModRateReadout(val) {
   }
 }
 
+function updateLfoPeriodReadout(val) {
+  if (elements.readoutLfoPeriod) elements.readoutLfoPeriod.textContent = `${val.toFixed(1)} s`;
+  if (elements.lfoPeriod) elements.lfoPeriod.setAttribute('aria-valuetext', `${val.toFixed(1)} seconds between random targets`);
+}
+
+function updateAttenuverterReadout(target, val) {
+  const controls = elements.attenuverters[target];
+  const percent = Math.round(val * 100);
+  const text = `${percent > 0 ? '+' : ''}${percent}%`;
+  if (controls.readout) {
+    controls.readout.textContent = text;
+    controls.readout.dataset.polarity = percent < 0 ? 'negative' : percent > 0 ? 'positive' : 'zero';
+  }
+  if (controls.input) {
+    controls.input.value = val;
+    controls.input.setAttribute('aria-valuetext', percent === 0 ? '0 percent, off' : `${text}, ${percent < 0 ? 'inverted' : 'positive'}`);
+    controls.input.style.setProperty('--depth-start', `${Math.min(50, (val + 1) * 50)}%`);
+    controls.input.style.setProperty('--depth-end', `${Math.max(50, (val + 1) * 50)}%`);
+    controls.input.dataset.polarity = percent < 0 ? 'negative' : percent > 0 ? 'positive' : 'zero';
+  }
+}
+
+function setLfoPeriod(val) {
+  if (!state.lfoNode || !state.audioCtx) return;
+  state.lfoNode.parameters.get('period').setValueAtTime(val, state.audioCtx.currentTime);
+}
+
+function setAttenuverter(target, val) {
+  state.attenuverters[target] = val;
+  updateAttenuverterReadout(target, val);
+  setNativeParam(state.lfoRouteGains[target]?.gain, val * lfoTargets[target].span);
+}
+
+function setVisualTelemetry(enabled) {
+  state.workletNode?.port.postMessage({ type: 'telemetry', enabled });
+  state.lfoNode?.port.postMessage({ type: 'telemetry', enabled });
+}
+
 /**
  * Apply AudioParam value safely
  */
@@ -312,6 +393,11 @@ function applyAllParamsToGraph() {
   setEffectsParam('spring', state.params.spring);
   setEffectsParam('modamp', state.params.modamp);
   setEffectsParam('modRate', state.params.modRate);
+
+  setLfoPeriod(state.lfoPeriod);
+  for (const target of Object.keys(lfoTargets)) {
+    setNativeParam(state.lfoRouteGains[target]?.gain, state.attenuverters[target] * lfoTargets[target].span);
+  }
   if (state.pannerNode) {
     setNativeParam(state.pannerNode.pan, state.params.pan);
   }
@@ -362,6 +448,14 @@ function verifyEnvironment() {
  */
 async function cleanupAudioGraph() {
   try {
+    for (const routeGain of Object.values(state.lfoRouteGains)) routeGain.disconnect();
+    state.lfoRouteGains = {};
+    if (state.lfoNode) {
+      state.lfoNode.port.onmessage = null;
+      state.lfoNode.port.close();
+      state.lfoNode.disconnect();
+      state.lfoNode = null;
+    }
     if (state.workletNode) {
       state.workletNode.disconnect();
       state.workletNode = null;
@@ -393,6 +487,8 @@ async function cleanupAudioGraph() {
   } finally {
     state.hasInitialized = false;
     state.isRunning = false;
+    state.lfoTelemetry.value = null;
+    if (elements.lfoValue) elements.lfoValue.textContent = '—';
   }
 }
 
@@ -433,11 +529,12 @@ async function initAudioGraph() {
     // activation. Safari may reject resume() after awaiting worklet downloads.
     const playback = ctx.resume();
 
-    // Load worklet modules (voice generator and reverb effects)
+    // Load voice, effects, and the independent modulation source together.
     await Promise.all([
       playback,
       ctx.audioWorklet.addModule(new URL('./audio/krell-worklet.js', import.meta.url)),
-      ctx.audioWorklet.addModule(new URL('./audio/reverb-worklet.js', import.meta.url))
+      ctx.audioWorklet.addModule(new URL('./audio/reverb-worklet.js', import.meta.url)),
+      ctx.audioWorklet.addModule(new URL('./audio/random-lfo-worklet.js', import.meta.url))
     ]);
     const workletOptions = {
       numberOfInputs: 0,
@@ -482,6 +579,37 @@ async function initAudioGraph() {
     masterGain.gain.setValueAtTime(0.0, ctx.currentTime); // Start silent to avoid pops
     state.gainNode = masterGain;
 
+    if (state.cachedLfoSeed === null) {
+      state.cachedLfoSeed = deriveLfoSeed(state.cachedSeed ?? ((Math.random() * 0x100000000) >>> 0));
+    }
+    state.lfoNode = new AudioWorkletNode(ctx, 'krell-random-lfo', {
+      numberOfInputs: 0,
+      numberOfOutputs: 1,
+      outputChannelCount: [1],
+      processorOptions: { seed: state.cachedLfoSeed },
+      parameterData: { period: state.lfoPeriod }
+    });
+    state.lfoNode.port.onmessage = ({ data }) => {
+      if (!data || data.type !== 'lfo') return;
+      state.lfoTelemetry.value = data.value;
+      state.lfoTelemetry.segment = data.segment;
+      state.lfoTelemetry.period = data.period;
+      if (state.isCanvasVisible && elements.lfoValue) {
+        const value = data.value;
+        elements.lfoValue.textContent = `${value >= 0 ? '+' : ''}${value.toFixed(2)}`;
+        elements.lfoValue.dataset.polarity = value < 0 ? 'negative' : 'positive';
+      }
+    };
+    for (const [target, { node }] of Object.entries(lfoTargets)) {
+      const routeGain = ctx.createGain();
+      routeGain.gain.setValueAtTime(0, ctx.currentTime);
+      state.lfoRouteGains[target] = routeGain;
+      const destination = target === 'pan' ? panner.pan : state[node].parameters.get(target);
+      state.lfoNode.connect(routeGain);
+      routeGain.connect(destination);
+    }
+    setVisualTelemetry(false);
+
     // Wire graph: worklet -> effects -> analyser -> panner -> gain -> destination
     worklet.connect(effects);
     effects.connect(analyser);
@@ -506,6 +634,7 @@ function handleContextStateChange() {
 
   if (ctxState === 'suspended' || ctxState === 'interrupted') {
     state.isRunning = false;
+    setVisualTelemetry(false);
     stopScopeLoop();
     updateSystemStatus('suspended', `Audio ${ctxState === 'interrupted' ? 'Interrupted' : 'Suspended'}`);
     if (elements.btnPlay) {
@@ -539,9 +668,7 @@ function handleContextStateChange() {
         elements.scopeOverlay.classList.add('hidden');
       }
 
-      if (state.workletNode) {
-        state.workletNode.port.postMessage({ type: 'telemetry', enabled: state.isCanvasVisible });
-      }
+      setVisualTelemetry(state.isCanvasVisible);
 
       if (state.isCanvasVisible) {
         startScopeLoop();
@@ -636,6 +763,7 @@ function clearTelemetryDOM() {
   if (elements.telDuration) elements.telDuration.textContent = '—';
   if (elements.telRes) elements.telRes.textContent = '—';
   if (elements.telCycle) elements.telCycle.textContent = '—';
+  if (elements.lfoValue) elements.lfoValue.textContent = '—';
 }
 
 /**
@@ -671,9 +799,7 @@ async function startAudio() {
     state.isCanvasVisible = !document.hidden;
 
     // Send explicit telemetry state ({ enabled: !document.hidden })
-    if (state.workletNode) {
-      state.workletNode.port.postMessage({ type: 'telemetry', enabled: state.isCanvasVisible });
-    }
+    setVisualTelemetry(state.isCanvasVisible);
 
     state.isRunning = true;
     updateSystemStatus('active', 'Synthesizer Active • Krell Voice Running');
@@ -727,9 +853,7 @@ async function pauseAudio() {
     }
 
     // Notify worklet to stop telemetry
-    if (state.workletNode) {
-      state.workletNode.port.postMessage({ type: 'telemetry', enabled: false });
-    }
+    setVisualTelemetry(false);
 
     state.isRunning = false;
     updateSystemStatus('suspended', 'Synthesizer Paused • Graph Retained');
@@ -771,6 +895,8 @@ function reseed() {
   // Generate a random 32-bit unsigned integer
   const seed = (Math.random() * 0xFFFFFFFF) >>> 0;
   state.cachedSeed = seed;
+  state.cachedLfoSeed = deriveLfoSeed(seed);
+  state.lfoNode?.port.postMessage({ type: 'reseed', seed: state.cachedLfoSeed });
   if (state.workletNode) {
     state.workletNode.port.postMessage({ type: 'reseed', seed });
   }
@@ -934,14 +1060,10 @@ function handleVisibilityChange() {
       cancelAnimationFrame(state.rafId);
       state.rafId = null;
     }
-    if (state.workletNode) {
-      state.workletNode.port.postMessage({ type: 'telemetry', enabled: false });
-    }
+    setVisualTelemetry(false);
   } else {
     state.isCanvasVisible = true;
-    if (state.workletNode && state.isRunning) {
-      state.workletNode.port.postMessage({ type: 'telemetry', enabled: true });
-    }
+    setVisualTelemetry(state.isRunning);
     if (state.isRunning) {
       resizeCanvas();
       startScopeLoop();
@@ -973,6 +1095,21 @@ function setupEventListeners() {
       setWorkletParam('waveform', val);
     });
   });
+
+  if (elements.lfoPeriod) {
+    elements.lfoPeriod.addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value);
+      state.lfoPeriod = val;
+      updateLfoPeriodReadout(val);
+      setLfoPeriod(val);
+    });
+  }
+  for (const [target, controls] of Object.entries(elements.attenuverters)) {
+    controls.input?.addEventListener('input', (e) => {
+      setAttenuverter(target, parseFloat(e.target.value));
+    });
+    controls.reset?.addEventListener('click', () => setAttenuverter(target, 0));
+  }
 
   // Pace Slider
   if (elements.paramPace) {
@@ -1102,6 +1239,13 @@ function setupEventListeners() {
  */
 function initApp() {
   // Sync initial DOM slider values to state
+  if (elements.lfoPeriod) {
+    state.lfoPeriod = parseFloat(elements.lfoPeriod.value);
+    updateLfoPeriodReadout(state.lfoPeriod);
+  }
+  for (const [target, controls] of Object.entries(elements.attenuverters)) {
+    if (controls.input) setAttenuverter(target, parseFloat(controls.input.value));
+  }
   if (elements.paramPace) {
     state.params.pace = parseFloat(elements.paramPace.value);
     updatePaceReadout(state.params.pace);

@@ -739,6 +739,188 @@ input[type="range"]:active::-moz-range-thumb {
   margin-top: -0.15rem;
 }
 
+/* Bipolar modulation stays native: a large touch surface around a thin track. */
+.modulation-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(220px, 1fr) auto;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 1rem;
+  margin-bottom: 1.25rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+}
+
+.modulation-description p {
+  margin-top: 0.5rem;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.modulation-description .modulation-hint {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+}
+
+.modulation-timing,
+.depth-slider-wrapper {
+  min-width: 0;
+}
+
+.modulation-timing .control-caption {
+  margin-top: 0.5rem;
+}
+
+.modulation-live {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  align-items: center;
+  white-space: nowrap;
+}
+
+#lfo-value {
+  font-size: 1.4rem;
+  font-variant-numeric: tabular-nums;
+  min-width: 5ch;
+  text-align: center;
+  color: var(--amber-bright);
+}
+
+#lfo-value[data-polarity="negative"],
+.depth-readout[data-polarity="negative"] {
+  color: var(--cyan-subtle);
+}
+
+.control-card > .control-header {
+  flex-wrap: wrap;
+}
+
+.control-readout {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.attenuverter {
+  border-top: 1px solid var(--border-dim);
+  padding-top: 0.75rem;
+  margin-top: auto;
+}
+
+.attenuverter .control-label {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.depth-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.lfo-slider {
+  padding: 0;
+  min-height: 44px;
+}
+
+.lfo-slider input[type="range"] {
+  height: 44px;
+  margin: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+}
+
+.lfo-slider input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-medium);
+  border-radius: 3px;
+}
+
+.lfo-slider input[type="range"]::-moz-range-track {
+  height: 4px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-medium);
+  border-radius: 3px;
+}
+
+.lfo-slider input[type="range"]::-webkit-slider-thumb {
+  margin-top: -6px;
+}
+
+.lfo-slider input[type="range"]:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 1px;
+}
+
+.lfo-slider input.depth-slider {
+  --depth-start: 50%;
+  --depth-end: 50%;
+  --depth-color: var(--amber);
+  background: linear-gradient(var(--text-muted), var(--text-muted)) center / 2px 18px no-repeat;
+}
+
+.lfo-slider input.depth-slider[data-polarity="negative"] {
+  --depth-color: var(--cyan-subtle);
+}
+
+.lfo-slider input.depth-slider::-webkit-slider-runnable-track {
+  background: linear-gradient(to right, var(--bg-input) var(--depth-start), var(--depth-color) var(--depth-start), var(--depth-color) var(--depth-end), var(--bg-input) var(--depth-end));
+}
+
+.lfo-slider input.depth-slider::-moz-range-track {
+  background: linear-gradient(to right, var(--bg-input) var(--depth-start), var(--depth-color) var(--depth-start), var(--depth-color) var(--depth-end), var(--bg-input) var(--depth-end));
+}
+
+.depth-scale {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin-right: calc(44px + 0.5rem);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.depth-scale span:nth-child(2) {
+  text-align: center;
+}
+
+.depth-scale span:last-child {
+  text-align: right;
+}
+
+.depth-span {
+  margin-top: 0.5rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.depth-reset {
+  width: 44px;
+  min-height: 44px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  background: var(--bg-input);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.depth-reset:hover {
+  color: var(--text-main);
+  border-color: var(--border-bright);
+}
+
+.depth-reset:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
 /* ==========================================================================
    About Section
    ========================================================================== */
@@ -829,6 +1011,19 @@ input[type="range"]:active::-moz-range-thumb {
 
   .controls-grid {
     grid-template-columns: 1fr;
+  }
+
+  .modulation-panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .modulation-live {
+    flex-direction: row;
+    justify-content: space-between;
+  }
+
+  .control-card {
+    min-width: 0;
   }
 
   .flow-container {

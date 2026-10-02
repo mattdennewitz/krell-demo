@@ -128,12 +128,35 @@
               <span class="btn-icon" aria-hidden="true">&#9654;</span>
               <span id="btn-play-text">Start Synthesis</span>
             </button>
-            <button type="button" id="btn-reseed" class="btn btn-secondary" aria-label="New Sequence Seed" title="Re-seed random generator without resetting audio graph">
+            <button type="button" id="btn-reseed" class="btn btn-secondary" aria-label="New Voice and LFO Sequence Seeds" title="Re-seed voice and LFO independently without resetting the audio graph">
               <span class="btn-icon" aria-hidden="true">&#8635;</span>
               <span>New Sequence</span>
             </button>
           </div>
         </div>
+
+        <section class="modulation-panel" aria-labelledby="lfo-heading">
+          <div class="modulation-description">
+            <h3 id="lfo-heading" class="control-label">Smooth Random LFO</h3>
+            <p>One correlated bipolar source moves smoothly between random targets, independently of the envelope cycle. Signed depths add to manual bases and clip at each control&rsquo;s floor and ceiling. Negative depths invert the motion; zero is off.</p>
+            <p class="modulation-hint">Centered sliders make polarity and zero visible, with native touch and keyboard control. Waveform and master level stay manual.</p>
+          </div>
+          <div class="modulation-timing">
+            <div class="control-header">
+              <label for="lfo-period" class="control-label">Target Period</label>
+              <output for="lfo-period" id="readout-lfo-period" class="control-readout">3.0 s</output>
+            </div>
+            <div class="slider-wrapper lfo-slider">
+              <input type="range" id="lfo-period" min="0.1" max="30" step="0.1" value="3" aria-label="Random LFO period" aria-valuetext="3.0 seconds between random targets" aria-describedby="lfo-period-help">
+            </div>
+            <div class="scale-ticks" aria-hidden="true"><span>0.1 s</span><span>30 s</span></div>
+            <p id="lfo-period-help" class="control-caption">Time between new targets, not an envelope rate.</p>
+          </div>
+          <div class="modulation-live">
+            <span class="telemetry-label">Live LFO &minus;1 &hellip; +1</span>
+            <output id="lfo-value" class="telemetry-value" aria-label="Live signed random LFO value" aria-live="off">&mdash;</output>
+          </div>
+        </section>
 
         <div class="controls-grid">
           <!-- Waveform Mode -->
@@ -157,7 +180,7 @@
           <!-- Pace / Speed -->
           <div class="control-card">
             <div class="control-header">
-              <label for="param-pace" class="control-label">Pace (Rate Multiplier)</label>
+              <label for="param-pace" class="control-label">Pace (Base Rate)</label>
               <output for="param-pace" id="readout-pace" class="control-readout">1.00&times;</output>
             </div>
             <div class="slider-wrapper">
@@ -170,12 +193,26 @@
               <span>4.0&times;</span>
             </div>
             <p class="control-caption">Scales rise and fall duration of the self-cycling slope generator.</p>
+            <div class="attenuverter">
+              <div class="control-header">
+                <label for="atten-pace" class="control-label">LFO Depth</label>
+                <output for="atten-pace" id="readout-atten-pace" class="control-readout depth-readout">0%</output>
+              </div>
+              <div class="depth-controls">
+                <div class="slider-wrapper lfo-slider depth-slider-wrapper">
+                  <input type="range" id="atten-pace" class="depth-slider" min="-1" max="1" step="0.01" value="0" aria-label="Pace LFO attenuverter" aria-valuetext="0 percent, off" aria-describedby="span-atten-pace">
+                </div>
+                <button type="button" id="reset-atten-pace" class="depth-reset" aria-label="Reset Pace LFO depth to zero">0</button>
+              </div>
+              <div class="scale-ticks depth-scale" aria-hidden="true"><span>&minus; Invert</span><span>0 Off</span><span>+ Positive</span></div>
+              <p id="span-atten-pace" class="depth-span">100% depth = &plusmn;1.875&times;</p>
+            </div>
           </div>
 
           <!-- Root Frequency -->
           <div class="control-card">
             <div class="control-header">
-              <label for="param-root" class="control-label">Root Frequency</label>
+              <label for="param-root" class="control-label">Root Frequency (Base)</label>
               <output for="param-root" id="readout-root" class="control-readout">110 Hz (A2)</output>
             </div>
             <div class="slider-wrapper">
@@ -188,12 +225,26 @@
               <span>440 Hz</span>
             </div>
             <p class="control-caption">Base center frequency for sample-and-hold pitch selection.</p>
+            <div class="attenuverter">
+              <div class="control-header">
+                <label for="atten-root" class="control-label">LFO Depth</label>
+                <output for="atten-root" id="readout-atten-root" class="control-readout depth-readout">0%</output>
+              </div>
+              <div class="depth-controls">
+                <div class="slider-wrapper lfo-slider depth-slider-wrapper">
+                  <input type="range" id="atten-root" class="depth-slider" min="-1" max="1" step="0.01" value="0" aria-label="Pitch LFO attenuverter" aria-valuetext="0 percent, off" aria-describedby="span-atten-root">
+                </div>
+                <button type="button" id="reset-atten-root" class="depth-reset" aria-label="Reset Pitch LFO depth to zero">0</button>
+              </div>
+              <div class="scale-ticks depth-scale" aria-hidden="true"><span>&minus; Invert</span><span>0 Off</span><span>+ Positive</span></div>
+              <p id="span-atten-root" class="depth-span">100% depth = &plusmn;192.5 Hz</p>
+            </div>
           </div>
 
           <!-- Pitch Spread -->
           <div class="control-card">
             <div class="control-header">
-              <label for="param-spread" class="control-label">Pitch Spread</label>
+              <label for="param-spread" class="control-label">Pitch Spread (Base)</label>
               <output for="param-spread" id="readout-spread" class="control-readout">2.00 Oct</output>
             </div>
             <div class="slider-wrapper">
@@ -206,12 +257,26 @@
               <span>4 Oct</span>
             </div>
             <p class="control-caption">Octave range width traversed by sample-and-hold random pitch generator.</p>
+            <div class="attenuverter">
+              <div class="control-header">
+                <label for="atten-spread" class="control-label">LFO Depth</label>
+                <output for="atten-spread" id="readout-atten-spread" class="control-readout depth-readout">0%</output>
+              </div>
+              <div class="depth-controls">
+                <div class="slider-wrapper lfo-slider depth-slider-wrapper">
+                  <input type="range" id="atten-spread" class="depth-slider" min="-1" max="1" step="0.01" value="0" aria-label="Pitch Spread LFO attenuverter" aria-valuetext="0 percent, off" aria-describedby="span-atten-spread">
+                </div>
+                <button type="button" id="reset-atten-spread" class="depth-reset" aria-label="Reset Pitch Spread LFO depth to zero">0</button>
+              </div>
+              <div class="scale-ticks depth-scale" aria-hidden="true"><span>&minus; Invert</span><span>0 Off</span><span>+ Positive</span></div>
+              <p id="span-atten-spread" class="depth-span">100% depth = &plusmn;2 oct</p>
+            </div>
           </div>
 
           <!-- Vactrol Memory -->
           <div class="control-card">
             <div class="control-header">
-              <label for="param-memory" class="control-label">Vactrol Memory</label>
+              <label for="param-memory" class="control-label">Vactrol Memory (Base)</label>
               <output for="param-memory" id="readout-memory" class="control-readout">1.00&times;</output>
             </div>
             <div class="slider-wrapper">
@@ -223,11 +288,25 @@
               <span>2.5&times; (sluggish)</span>
             </div>
             <p class="control-caption">Photo-resistor decay lag and history hysteresis in the simulated optocoupler.</p>
+            <div class="attenuverter">
+              <div class="control-header">
+                <label for="atten-memory" class="control-label">LFO Depth</label>
+                <output for="atten-memory" id="readout-atten-memory" class="control-readout depth-readout">0%</output>
+              </div>
+              <div class="depth-controls">
+                <div class="slider-wrapper lfo-slider depth-slider-wrapper">
+                  <input type="range" id="atten-memory" class="depth-slider" min="-1" max="1" step="0.01" value="0" aria-label="Vactrol Memory LFO attenuverter" aria-valuetext="0 percent, off" aria-describedby="span-atten-memory">
+                </div>
+                <button type="button" id="reset-atten-memory" class="depth-reset" aria-label="Reset Vactrol Memory LFO depth to zero">0</button>
+              </div>
+              <div class="scale-ticks depth-scale" aria-hidden="true"><span>&minus; Invert</span><span>0 Off</span><span>+ Positive</span></div>
+              <p id="span-atten-memory" class="depth-span">100% depth = &plusmn;1.05&times;</p>
+            </div>
           </div>
           <!-- ARP MODAMP Amount -->
           <div class="control-card">
             <div class="control-header">
-              <label for="param-modamp" class="control-label">MODAMP Amount</label>
+              <label for="param-modamp" class="control-label">MODAMP Amount (Base)</label>
               <output for="param-modamp" id="readout-modamp" class="control-readout">0%</output>
             </div>
             <div class="slider-wrapper">
@@ -239,12 +318,26 @@
               <span>100% (Full modulation)</span>
             </div>
             <p class="control-caption">Modulation depth, not a dry/wet blend: 0% passes the synth unchanged; 100% applies full balanced multiplication.</p>
+            <div class="attenuverter">
+              <div class="control-header">
+                <label for="atten-modamp" class="control-label">LFO Depth</label>
+                <output for="atten-modamp" id="readout-atten-modamp" class="control-readout depth-readout">0%</output>
+              </div>
+              <div class="depth-controls">
+                <div class="slider-wrapper lfo-slider depth-slider-wrapper">
+                  <input type="range" id="atten-modamp" class="depth-slider" min="-1" max="1" step="0.01" value="0" aria-label="MODAMP Amount LFO attenuverter" aria-valuetext="0 percent, off" aria-describedby="span-atten-modamp">
+                </div>
+                <button type="button" id="reset-atten-modamp" class="depth-reset" aria-label="Reset MODAMP Amount LFO depth to zero">0</button>
+              </div>
+              <div class="scale-ticks depth-scale" aria-hidden="true"><span>&minus; Invert</span><span>0 Off</span><span>+ Positive</span></div>
+              <p id="span-atten-modamp" class="depth-span">100% depth = &plusmn;50 percentage points</p>
+            </div>
           </div>
 
           <!-- MODAMP Frequency -->
           <div class="control-card">
             <div class="control-header">
-              <label for="param-modRate" class="control-label">MODAMP Frequency</label>
+              <label for="param-modRate" class="control-label">MODAMP Frequency (Base)</label>
               <output for="param-modRate" id="readout-modRate" class="control-readout">73 Hz</output>
             </div>
             <div class="slider-wrapper">
@@ -257,12 +350,26 @@
               <span>1000 Hz</span>
             </div>
             <p class="control-caption">Modulation carrier frequency generating sum and difference sidebands across the entire voice signal.</p>
+            <div class="attenuverter">
+              <div class="control-header">
+                <label for="atten-modRate" class="control-label">LFO Depth</label>
+                <output for="atten-modRate" id="readout-atten-modRate" class="control-readout depth-readout">0%</output>
+              </div>
+              <div class="depth-controls">
+                <div class="slider-wrapper lfo-slider depth-slider-wrapper">
+                  <input type="range" id="atten-modRate" class="depth-slider" min="-1" max="1" step="0.01" value="0" aria-label="MODAMP Frequency LFO attenuverter" aria-valuetext="0 percent, off" aria-describedby="span-atten-modRate">
+                </div>
+                <button type="button" id="reset-atten-modRate" class="depth-reset" aria-label="Reset MODAMP Frequency LFO depth to zero">0</button>
+              </div>
+              <div class="scale-ticks depth-scale" aria-hidden="true"><span>&minus; Invert</span><span>0 Off</span><span>+ Positive</span></div>
+              <p id="span-atten-modRate" class="depth-span">100% depth = &plusmn;495 Hz</p>
+            </div>
           </div>
 
           <!-- Spring Reverb Level -->
           <div class="control-card">
             <div class="control-header">
-              <label for="param-spring" class="control-label">Spring Reverb</label>
+              <label for="param-spring" class="control-label">Spring Reverb (Base)</label>
               <output for="param-spring" id="readout-spring" class="control-readout">0%</output>
             </div>
             <div class="slider-wrapper">
@@ -274,11 +381,25 @@
               <span>100%</span>
             </div>
             <p class="control-caption">Final sound-shaping stage: synthetic dispersive delay tank model with metallic chirp and spring resonance.</p>
+            <div class="attenuverter">
+              <div class="control-header">
+                <label for="atten-spring" class="control-label">LFO Depth</label>
+                <output for="atten-spring" id="readout-atten-spring" class="control-readout depth-readout">0%</output>
+              </div>
+              <div class="depth-controls">
+                <div class="slider-wrapper lfo-slider depth-slider-wrapper">
+                  <input type="range" id="atten-spring" class="depth-slider" min="-1" max="1" step="0.01" value="0" aria-label="Spring Reverb LFO attenuverter" aria-valuetext="0 percent, off" aria-describedby="span-atten-spring">
+                </div>
+                <button type="button" id="reset-atten-spring" class="depth-reset" aria-label="Reset Spring Reverb LFO depth to zero">0</button>
+              </div>
+              <div class="scale-ticks depth-scale" aria-hidden="true"><span>&minus; Invert</span><span>0 Off</span><span>+ Positive</span></div>
+              <p id="span-atten-spring" class="depth-span">100% depth = &plusmn;50 percentage points</p>
+            </div>
           </div>
           <!-- Master Stereo Pan -->
           <div class="control-card">
             <div class="control-header">
-              <label for="param-pan" class="control-label">Stereo Pan</label>
+              <label for="param-pan" class="control-label">Stereo Pan (Base)</label>
               <output for="param-pan" id="readout-pan" class="control-readout">Center (C)</output>
             </div>
             <div class="slider-wrapper">
@@ -290,6 +411,20 @@
               <span>Right (R)</span>
             </div>
             <p class="control-caption">Stereo field placement via native StereoPannerNode with 20ms smoothing.</p>
+            <div class="attenuverter">
+              <div class="control-header">
+                <label for="atten-pan" class="control-label">LFO Depth</label>
+                <output for="atten-pan" id="readout-atten-pan" class="control-readout depth-readout">0%</output>
+              </div>
+              <div class="depth-controls">
+                <div class="slider-wrapper lfo-slider depth-slider-wrapper">
+                  <input type="range" id="atten-pan" class="depth-slider" min="-1" max="1" step="0.01" value="0" aria-label="Stereo Pan LFO attenuverter" aria-valuetext="0 percent, off" aria-describedby="span-atten-pan">
+                </div>
+                <button type="button" id="reset-atten-pan" class="depth-reset" aria-label="Reset Stereo Pan LFO depth to zero">0</button>
+              </div>
+              <div class="scale-ticks depth-scale" aria-hidden="true"><span>&minus; Invert</span><span>0 Off</span><span>+ Positive</span></div>
+              <p id="span-atten-pan" class="depth-span">100% depth = &plusmn;1 pan unit</p>
+            </div>
           </div>
 
           <!-- Master Gain -->
@@ -322,6 +457,7 @@
             <li><strong>Self-Cycling Slope:</strong> A function generator cycles through rise and fall phases. Completing the fall phase triggers random sample-and-hold stages.</li>
             <li><strong>Dynamic Parameter Selection:</strong> Each cycle samples a new oscillator pitch and updates the rise and fall durations for the subsequent cycle.</li>
             <li><strong>Low-Pass Gate:</strong> The signal routes through a 292-inspired LPG operating in Both mode (simultaneous variable low-pass filtering and attenuation). The control envelope modulates gate openness; the heuristic vactrol model imparts characteristic asymmetric optocoupler decay.</li>
+            <li><strong>Smooth Random LFO:</strong> A separate audio-thread source continuously glides between random bipolar targets. One signal is shared by eight signed attenuverter routes; manual controls remain the bases. Target period is independent of the self-cycling envelope, and summed offsets clamp to the existing parameter bounds.</li>
             <li><strong>ARP MODAMP (Balanced Modulator Model):</strong> A functional model inspired by the ARP 2500 Model 1005 ModAmp (<a href="https://www.guitarfool.com/ARP2500/4014.pdf" target="_blank" rel="noopener noreferrer">4014 schematic</a> and <a href="https://djjondent.blogspot.com/2014/11/the-arp-2500-1005-modamp-module.html" target="_blank" rel="noopener noreferrer">1005 MODAMP description</a>). The 4014/1005 is a balanced modulator, not reverb hardware. Modulation depth scales from the unchanged voice at 0% to full bipolar multiplication at 100%, which generates sum/difference sidebands before the spring. This is signal multiplication, not a transistor-exact circuit simulation.
             <li><strong>Spring Reverb (Dispersive Tank Model):</strong> Positioned at the end of the musical processing chain as the final sound-shaping stage before oscilloscope analysis, stereo panning, and master level control. Serial synthetic dispersive delay network with chirped dispersion and metallic reflection; not a sampled impulse response or physical spring emulation.</li>
           </ul>
